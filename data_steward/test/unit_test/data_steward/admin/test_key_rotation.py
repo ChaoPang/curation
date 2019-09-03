@@ -98,10 +98,10 @@ class KeyRotationTest(unittest.TestCase):
                                      mock_delete_key):
         mock_list_service_accounts.return_value = [{'email': 'test-email@test.com'},
                                                    {'email': 'test-2-email@test.com'}]
-        mock_list_keys_for_service_account.side_effect = [[{'name': 'key-1'},
-                                                           {'name': 'key-2'}],
-                                                          [{'name': 'key-3'},
-                                                           {'name': 'key-4'}]]
+        mock_list_keys_for_service_account.side_effect = [[{'name': 'key-1', 'validAfterTime': 'expired-date-1'},
+                                                           {'name': 'key-2', 'validAfterTime': 'valid-date-1'}],
+                                                          [{'name': 'key-3', 'validAfterTime': 'expired-date-2'},
+                                                           {'name': 'key-4', 'validAfterTime': 'valid-date-2'}]]
 
         mock_is_key_expired.side_effect = [True, False, True, False]
 
@@ -113,16 +113,17 @@ class KeyRotationTest(unittest.TestCase):
 
         mock_list_keys_for_service_account.assert_any_call('test-2-email@test.com')
 
-        mock_is_key_expired.assert_any_call({'name': 'key-1'})
-        mock_is_key_expired.assert_any_call({'name': 'key-2'})
-        mock_is_key_expired.assert_any_call({'name': 'key-3'})
-        mock_is_key_expired.assert_any_call({'name': 'key-4'})
+        mock_is_key_expired.assert_any_call({'name': 'key-1', 'validAfterTime': 'expired-date-1'})
+        mock_is_key_expired.assert_any_call({'name': 'key-2', 'validAfterTime': 'valid-date-1'})
+        mock_is_key_expired.assert_any_call({'name': 'key-3', 'validAfterTime': 'expired-date-2'})
+        mock_is_key_expired.assert_any_call({'name': 'key-4', 'validAfterTime': 'valid-date-2'})
 
-        mock_delete_key.assert_any_call({'name': 'key-1'})
-        mock_delete_key.assert_any_call({'name': 'key-3'})
+        mock_delete_key.assert_any_call({'name': 'key-1', 'validAfterTime': 'expired-date-1'})
+        mock_delete_key.assert_any_call({'name': 'key-3', 'validAfterTime': 'expired-date-2'})
 
-        expected_deleted_keys = [{'service_account_email': 'test-email@test.com', 'key_name': 'key-1'},
-                                 {'service_account_email': 'test-2-email@test.com', 'key_name': 'key-3'}]
+        expected_deleted_keys = [
+            {'service_account_email': 'test-email@test.com', 'key_name': 'key-1', 'created_at': 'expired-date-1'},
+            {'service_account_email': 'test-2-email@test.com', 'key_name': 'key-3', 'created_at': 'expired-date-2'}]
 
         self.assertItemsEqual(expected_deleted_keys, actual_deleted_keys)
 
