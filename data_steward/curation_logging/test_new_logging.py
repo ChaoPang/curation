@@ -1,6 +1,5 @@
 # Imports the Google Cloud client library
-import logging
-from google.cloud.logging import client
+from flask import request
 from curation_logging.curation_gae_handler import *
 
 LOG_NAME = 'curation_gae_logger'
@@ -16,7 +15,10 @@ if __name__ == '__main__':
     logging.error('Bad world')
     finalize_request_logging(None)
 
-
+    setup_request_logging()
+    logging.info('Hello world 2')
+    logging.error('Bad world 2')
+    finalize_request_logging(None)
 
     # curation_logging_handler = CurationLoggingHandler()
     #

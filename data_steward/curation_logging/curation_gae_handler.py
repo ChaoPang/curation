@@ -1,14 +1,15 @@
 import logging
-import os
+import app_identity
 import random
 import string
+from datetime import datetime
 from flask import request
 from google.cloud import logging_v2 as gcp_logging_v2
 from google.protobuf import json_format as gcp_json_format, any_pb2 as gcp_any_pb2
 from curation_logging import gcp_request_log_pb2
 
-_DEFAULT_GAE_LOGGER_NAME = 'curation_gae_logger'
 REQUEST_LOG_TYPE = "type.googleapis.com/google.appengine.logging.v1.RequestLog"
+LOG_NAME_TEMPLATE = "projects/{project_id}/logs/appengine.googleapis.com%2Frequest_log"
 GAE_APP = "gae_app"
 
 
@@ -20,39 +21,79 @@ class CurationLoggingHandler(logging.Handler):
         super(CurationLoggingHandler, self).__init__()
         self._logging_client = gcp_logging_v2.LoggingServiceV2Client()
         self._operation_id = None
-        self._request = None
+        self._request_url = None
+        self._request_start_time = None
+        self._request_end_time = None
+        self._request_method = None
+        self._request_endpoint = None
+        self._request_resource = None
+        self._request_agent = None
+        self._request_remote_addr = None
+        self._request_host = None
+        self._request_log_id = None
+
+        self._request_taskname = None
+        self._request_queue = None
+
+        self.trace_id = None
+        self._trace = None
+
         self._log_records = []
 
-    def emit(self, record: logging.LogRecord):
-        self._log_records.append(record)
-
-    def _cleanup(self):
-        self._operation_id = None
-        self._request = None
-        self._log_records.clear()
-
     def setup_from_request(self, _request):
-        self._request = _request
+
         self._operation_id = ''.join(
             random.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))
+        self._request_start_time = datetime.now().isoformat()
 
-    def publish_to_stack_driver(self):
-        proto_payload = {
-            "@type": REQUEST_LOG_TYPE,
-            "resource": 'ValidateAllHpoFiles',
-            "line": None
+        if _request:
+            self._request_method = _request.method
+            self._request_endpoint = _request.endpoint
+            self._request_resource = _request.path
+            self._request_agent = str(_request.user_agent)
+            self._request_remote_addr = _request.headers.get('X-Appengine-User-Ip', _request.remote_addr)
+            self._request_host = _request.headers.get('X-Appengine-Default-Version-Hostname', _request.host)
+            self._request_log_id = _request.headers.get('X-Appengine-Request-Log-Id', 'None')
+
+            self._request_taskname = _request.headers.get('X-Appengine-Taskname', None)
+            self._request_queue = _request.headers.get('X-Appengine-Queuename', None)
+
+            trace_id = _request.headers.get('X-Cloud-Trace-Context', '')
+            if trace_id:
+                trace_id = trace_id.split('/')[0]
+                trace = 'projects/{0}/traces/{1}'.format(app_identity.get_application_id(), trace_id)
+                self._trace = trace
+
+    def emit(self, record: logging.LogRecord):
+
+        time = datetime.fromtimestamp(record.created)
+
+        func_name = record.funcName if record.funcName else ''
+        file = record.pathname if record.pathname else ''
+        line_no = record.lineno if record.lineno else 0
+        source_location = {
+            "file": file,
+            "functionName": func_name,
+            "line": line_no
         }
 
-        log_messages = []
-        for record in self._log_records:
-            log_messages.append({"logMessage": record.msg, "severity": record.levelname})
+        record_line = {
+            "levelname": record.levelname,
+            "levelno": record.levelno,
+            "msg": record.msg,
+            "time": time,
+            "sourceLocation": source_location
+        }
 
-        proto_payload["line"] = log_messages
-        proto_payload_log_pb2 = gcp_json_format.ParseDict(proto_payload, gcp_any_pb2.Any())
+        self._log_records.append(record_line)
+
+    def publish_to_stack_driver(self):
+
+        self._request_end_time = datetime.now().isoformat()
 
         log_severity = self._get_highest_log_level()
 
-        log_body = {
+        log_request_body = {
             "operation": {
                 "id": self._operation_id
             },
@@ -60,25 +101,74 @@ class CurationLoggingHandler(logging.Handler):
             "resource": {
                 "type": GAE_APP
             },
-            "proto_payload": proto_payload_log_pb2
+            "proto_payload": self._setup_proto_payload()
         }
 
-        log_entry_pb2 = gcp_logging_v2.types.log_entry_pb2.LogEntry(**log_body)
+        log_entry_pb2 = gcp_logging_v2.types.log_entry_pb2.LogEntry(**log_request_body)
 
-        log_name = 'projects/aou-res-curation-test/logs/{log_name}'.format(log_name=_DEFAULT_GAE_LOGGER_NAME)
-        self._logging_client.write_log_entries([log_entry_pb2], log_name)
+        self._logging_client.write_log_entries([log_entry_pb2],
+                                               LOG_NAME_TEMPLATE.format(project_id=app_identity.get_application_id()))
 
     def finalize(self, response):
-
         self.publish_to_stack_driver()
         self._cleanup()
 
+    def _setup_proto_payload(self):
+
+        proto_payload = {
+            "@type": REQUEST_LOG_TYPE,
+            # "startTime": self._request_start_time,
+            # "endTime": self._request_end_time,
+            "method": self._request_method,
+            "resource": self._request_resource,
+            "userAgent": self._request_agent,
+            "host": self._request_host,
+            "ip": self._request_remote_addr,
+            "requestId": self._request_log_id,
+            "traceId": self._trace,
+            "line": [],
+            "userAgent": self._request_agent,
+            "resource": self._request_endpoint,
+            "urlMapEntry": "validation.main.app"
+        }
+
+        log_messages = []
+        for record in self._log_records:
+            log_messages.append({
+                "logMessage": record["msg"],
+                "severity": record["levelname"],
+                "sourceLocation": record["sourceLocation"]
+                # "time": record["time"]
+            })
+        proto_payload["line"] = log_messages
+
+        return gcp_json_format.ParseDict(proto_payload, gcp_any_pb2.Any())
+
     def _get_highest_log_level(self):
         if self._log_records:
-            s = sorted(self._log_records, key=lambda log_record: -log_record.levelno)
-            return s[0].levelname
+            s = sorted(self._log_records, key=lambda log_record: -log_record['levelno'])
+            return s[0]['levelname']
         else:
             return gcp_logging_v2.gapic.enums.LogSeverity(200)
+
+    def _cleanup(self):
+        self._operation_id = None
+        self._request = None
+
+        self._request_method = None
+        self._request_endpoint = None
+        self._request_resource = None
+        self._request_agent = None
+        self._request_remote_addr = None
+        self._request_log_id = None
+        self._request_host = None
+
+        # cloud tasks
+        self._request_task_name = None
+        self._request_queue = None
+        self._reuqest_user_agent = None
+
+        self._log_records.clear()
 
 
 class FlaskGCPStackDriverLogging:
