@@ -11,8 +11,10 @@ if __name__ == '__main__':
     # logger.delete()
 
     setup_request_logging()
-    logging.info('Hello world')
+    logging.info('Hello world %s %s', 'number', 'two')
     logging.error('Bad world')
+    logging.info('Hello world')
+    logging.warning('Bad world')
     finalize_request_logging(None)
 
     setup_request_logging()

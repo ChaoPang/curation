@@ -36,6 +36,8 @@ from curation_logging.curation_gae_handler import setup_request_logging, finaliz
 PREFIX = '/data_steward/v1/'
 app = Flask(__name__)
 
+logging.getLogger(__name__).setLevel(logging.INFO)
+
 
 class InternalValidationError(RuntimeError):
     """Raised when an internal error occurs during validation"""

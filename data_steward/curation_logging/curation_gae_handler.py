@@ -11,6 +11,7 @@ from curation_logging import gcp_request_log_pb2
 REQUEST_LOG_TYPE = "type.googleapis.com/google.appengine.logging.v1.RequestLog"
 LOG_NAME_TEMPLATE = "projects/{project_id}/logs/appengine.googleapis.com%2Frequest_log"
 GAE_APP = "gae_app"
+BUFFER_SIZE = 50
 
 
 class CurationLoggingHandler(logging.Handler):
@@ -21,7 +22,7 @@ class CurationLoggingHandler(logging.Handler):
         super(CurationLoggingHandler, self).__init__()
         self._logging_client = gcp_logging_v2.LoggingServiceV2Client()
         self._operation_id = None
-        self._request_url = None
+        self._request_url_rule = None
         self._request_start_time = None
         self._request_end_time = None
         self._request_method = None
@@ -48,6 +49,7 @@ class CurationLoggingHandler(logging.Handler):
 
         if _request:
             self._request_method = _request.method
+            self._request_url_rule = _request.url_rule
             self._request_endpoint = _request.endpoint
             self._request_resource = _request.path
             self._request_agent = str(_request.user_agent)
@@ -80,12 +82,15 @@ class CurationLoggingHandler(logging.Handler):
         record_line = {
             "levelname": record.levelname,
             "levelno": record.levelno,
-            "msg": record.msg,
+            "msg": record.msg % record.args if record.args else record.msg,
             "time": time,
             "sourceLocation": source_location
         }
 
         self._log_records.append(record_line)
+
+        if len(self._log_records) >= BUFFER_SIZE:
+            self.publish_to_stack_driver()
 
     def publish_to_stack_driver(self):
 
@@ -109,6 +114,8 @@ class CurationLoggingHandler(logging.Handler):
         self._logging_client.write_log_entries([log_entry_pb2],
                                                LOG_NAME_TEMPLATE.format(project_id=app_identity.get_application_id()))
 
+        self._log_records.clear()
+
     def finalize(self, response):
         self.publish_to_stack_driver()
         self._cleanup()
@@ -120,7 +127,7 @@ class CurationLoggingHandler(logging.Handler):
             # "startTime": self._request_start_time,
             # "endTime": self._request_end_time,
             "method": self._request_method,
-            "resource": self._request_resource,
+            "resource": self._request_endpoint,
             "userAgent": self._request_agent,
             "host": self._request_host,
             "ip": self._request_remote_addr,
@@ -128,7 +135,6 @@ class CurationLoggingHandler(logging.Handler):
             "traceId": self._trace,
             "line": [],
             "userAgent": self._request_agent,
-            "resource": self._request_endpoint,
             "urlMapEntry": "validation.main.app"
         }
 
@@ -154,7 +160,7 @@ class CurationLoggingHandler(logging.Handler):
     def _cleanup(self):
         self._operation_id = None
         self._request = None
-
+        self._request_url_rule = None
         self._request_method = None
         self._request_endpoint = None
         self._request_resource = None
@@ -178,7 +184,7 @@ class FlaskGCPStackDriverLogging:
 
     _log_handler = None
 
-    def __init__(self, log_level=logging.INFO):
+    def __init__(self, log_level=logging.WARNING):
         # Configure root logger
         self.root_logger = logging.getLogger()
         self.root_logger.setLevel(log_level)
