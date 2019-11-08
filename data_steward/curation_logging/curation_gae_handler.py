@@ -2,10 +2,11 @@ import logging
 import app_identity
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import request
 from google.cloud import logging_v2 as gcp_logging_v2
 from google.protobuf import json_format as gcp_json_format, any_pb2 as gcp_any_pb2
+from googleapiclient import discovery
 from curation_logging import gcp_request_log_pb2
 
 REQUEST_LOG_TYPE = "type.googleapis.com/google.appengine.logging.v1.RequestLog"
@@ -45,7 +46,7 @@ class CurationLoggingHandler(logging.Handler):
 
         self._operation_id = ''.join(
             random.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))
-        self._request_start_time = datetime.now().isoformat()
+        self._request_start_time = datetime.now(timezone.utc).isoformat()
 
         if _request:
             self._request_method = _request.method
@@ -68,8 +69,7 @@ class CurationLoggingHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
 
-        time = datetime.fromtimestamp(record.created)
-
+        time = datetime.fromtimestamp(record.created).replace(tzinfo=timezone.utc).isoformat()
         func_name = record.funcName if record.funcName else ''
         file = record.pathname if record.pathname else ''
         line_no = record.lineno if record.lineno else 0
@@ -94,7 +94,7 @@ class CurationLoggingHandler(logging.Handler):
 
     def publish_to_stack_driver(self):
 
-        self._request_end_time = datetime.now().isoformat()
+        self._request_end_time = datetime.now(timezone.utc).isoformat()
 
         log_severity = self._get_highest_log_level()
 
@@ -124,8 +124,8 @@ class CurationLoggingHandler(logging.Handler):
 
         proto_payload = {
             "@type": REQUEST_LOG_TYPE,
-            # "startTime": self._request_start_time,
-            # "endTime": self._request_end_time,
+            "startTime": self._request_start_time,
+            "endTime": self._request_end_time,
             "method": self._request_method,
             "resource": self._request_endpoint,
             "userAgent": self._request_agent,
@@ -143,8 +143,8 @@ class CurationLoggingHandler(logging.Handler):
             log_messages.append({
                 "logMessage": record["msg"],
                 "severity": record["levelname"],
-                "sourceLocation": record["sourceLocation"]
-                # "time": record["time"]
+                "sourceLocation": record["sourceLocation"],
+                "time": record["time"]
             })
         proto_payload["line"] = log_messages
 
@@ -159,7 +159,8 @@ class CurationLoggingHandler(logging.Handler):
 
     def _cleanup(self):
         self._operation_id = None
-        self._request = None
+        self._request_start_time = None
+        self._request_end_time = None
         self._request_url_rule = None
         self._request_method = None
         self._request_endpoint = None
@@ -184,7 +185,7 @@ class FlaskGCPStackDriverLogging:
 
     _log_handler = None
 
-    def __init__(self, log_level=logging.WARNING):
+    def __init__(self, log_level=logging.INFO):
         # Configure root logger
         self.root_logger = logging.getLogger()
         self.root_logger.setLevel(log_level)
@@ -193,6 +194,13 @@ class FlaskGCPStackDriverLogging:
         self._log_handler.setLevel(log_level)
         # Add StackDriver logging handler to root logger.
         self.root_logger.addHandler(self._log_handler)
+
+        logger = logging.getLogger('projects/aou-res-curation-test/logs/stderr')
+        logger.propagate = False
+        logger.setLevel(logging.ERROR)
+        logging.getLogger('stderr').setLevel(logging.ERROR)
+        logging.getLogger('discovery').setLevel(logging.ERROR)
+        discovery.logger.setLevel(logging.ERROR)
 
     def begin_request(self):
         """
