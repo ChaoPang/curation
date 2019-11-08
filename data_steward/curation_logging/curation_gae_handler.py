@@ -102,7 +102,7 @@ class CurationLoggingHandler(logging.Handler):
             },
             "proto_payload": self._setup_proto_payload(),
             "trace": self._trace,
-            "traceSampled": True
+            "trace_sampled": True
         }
 
         log_entry_pb2 = gcp_logging_v2.types.log_entry_pb2.LogEntry(**log_request_body)
