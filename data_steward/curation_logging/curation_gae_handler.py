@@ -50,7 +50,7 @@ class CurationLoggingHandler(logging.Handler):
 
         if _request:
             self._request_method = _request.method
-            self._request_url_rule = _request.url_rule
+            self._request_url_rule = str(_request.url_rule)
             self._request_endpoint = _request.endpoint
             self._request_resource = _request.path
             self._request_agent = str(_request.user_agent)
@@ -127,7 +127,7 @@ class CurationLoggingHandler(logging.Handler):
             "startTime": self._request_start_time,
             "endTime": self._request_end_time,
             "method": self._request_method,
-            "resource": self._request_endpoint,
+            "resource": self._request_url_rule,
             "userAgent": self._request_agent,
             "host": self._request_host,
             "ip": self._request_remote_addr,
