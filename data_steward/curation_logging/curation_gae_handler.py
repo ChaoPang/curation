@@ -1,7 +1,5 @@
 import logging
 import app_identity
-import random
-import string
 from datetime import datetime, timezone
 from flask import request
 from google.cloud import logging_v2 as gcp_logging_v2
@@ -22,7 +20,6 @@ class CurationLoggingHandler(logging.Handler):
     ):
         super(CurationLoggingHandler, self).__init__()
         self._logging_client = gcp_logging_v2.LoggingServiceV2Client()
-        self._operation_id = None
         self._request_url_rule = None
         self._request_start_time = None
         self._request_end_time = None
@@ -37,15 +34,13 @@ class CurationLoggingHandler(logging.Handler):
         self._request_taskname = None
         self._request_queue = None
 
-        self.trace_id = None
+        self._trace_id = None
         self._trace = None
 
         self._log_records = []
 
     def setup_from_request(self, _request):
 
-        self._operation_id = ''.join(
-            random.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))
         self._request_start_time = datetime.now(timezone.utc).isoformat()
 
         if _request:
@@ -61,11 +56,10 @@ class CurationLoggingHandler(logging.Handler):
             self._request_taskname = _request.headers.get('X-Appengine-Taskname', None)
             self._request_queue = _request.headers.get('X-Appengine-Queuename', None)
 
-            trace_id = _request.headers.get('X-Cloud-Trace-Context', '')
-            if trace_id:
-                trace_id = trace_id.split('/')[0]
-                trace = 'projects/{0}/traces/{1}'.format(app_identity.get_application_id(), trace_id)
-                self._trace = trace
+            trace_context = _request.headers.get('X-Cloud-Trace-Context', '')
+            if trace_context:
+                self._trace_id = trace_context.split('/')[0]
+                self._trace = 'projects/{0}/traces/{1}'.format(app_identity.get_application_id(), self._trace_id)
 
     def emit(self, record: logging.LogRecord):
 
@@ -100,13 +94,15 @@ class CurationLoggingHandler(logging.Handler):
 
         log_request_body = {
             "operation": {
-                "id": self._operation_id
+                "id": self._request_log_id
             },
             "severity": log_severity,
             "resource": {
                 "type": GAE_APP
             },
-            "proto_payload": self._setup_proto_payload()
+            "proto_payload": self._setup_proto_payload(),
+            "trace": self._trace,
+            "traceSampled": True
         }
 
         log_entry_pb2 = gcp_logging_v2.types.log_entry_pb2.LogEntry(**log_request_body)
@@ -132,7 +128,7 @@ class CurationLoggingHandler(logging.Handler):
             "host": self._request_host,
             "ip": self._request_remote_addr,
             "requestId": self._request_log_id,
-            "traceId": self._trace,
+            "traceId": self._trace_id,
             "line": [],
             "userAgent": self._request_agent,
             "urlMapEntry": "validation.main.app"
@@ -158,7 +154,7 @@ class CurationLoggingHandler(logging.Handler):
             return gcp_logging_v2.gapic.enums.LogSeverity(200)
 
     def _cleanup(self):
-        self._operation_id = None
+
         self._request_start_time = None
         self._request_end_time = None
         self._request_url_rule = None
