@@ -31,7 +31,6 @@ from common import ACHILLES_EXPORT_PREFIX_STRING, ACHILLES_EXPORT_DATASOURCES_JS
 from validation import hpo_report
 from tools import retract_data_bq, retract_data_gcs
 from io import open
-from admin import key_rotation
 import slack
 
 client = slack.WebClient(os.environ["SLACK_TOKEN"])
@@ -783,22 +782,21 @@ def write_sites_pii_validation_files():
 
 @api_util.auth_required_cron
 def remove_expired_keys():
-
-    project_id = bq_utils.app_identity.get_application_id()
-    logging.info('Started removal of expired service account keys for %s' % project_id)
-
-    expired_keys = key_rotation.delete_expired_keys(project_id)
-    logging.info('Completed removal of expired service account keys for %s' % project_id)
-
-    logging.info('Started listing expiring service account keys for %s' % project_id)
-    expiring_keys = key_rotation.get_expiring_keys(project_id)
-    logging.info('Completed listing expiring service account keys for %s' % project_id)
+    # project_id = bq_utils.app_identity.get_application_id()
+    # logging.info('Started removal of expired service account keys for %s' % project_id)
+    #
+    # expired_keys = key_rotation.delete_expired_keys(project_id)
+    # logging.info('Completed removal of expired service account keys for %s' % project_id)
+    #
+    # logging.info('Started listing expiring service account keys for %s' % project_id)
+    # expiring_keys = key_rotation.get_expiring_keys(project_id)
+    # logging.info('Completed listing expiring service account keys for %s' % project_id)
 
     # if NOTIFICATION_ADDRESS is not None:
 
     # if len(expired_keys) != 0 or len(expiring_keys) != 0:
     client.chat_postMessage(
-        channel="#test-notification",
+        channel="#test_channel",
         text="Hello from your GAE!",
         verify=False
     )

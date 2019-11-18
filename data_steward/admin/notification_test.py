@@ -26,11 +26,11 @@ def slack_notification():
     client = slack.WebClient(os.environ["SLACK_TOKEN"])
 
     client.chat_postMessage(
-        channel="#test-notification",
+        channel="#test_channel",
         text="Hello from your app!",
         verify=False
     )
 
 
 if __name__ == '__main__':
-    sendgrid_noticiation()
+    slack_notification()
