@@ -8,8 +8,8 @@ from sendgrid.helpers.mail import Mail
 
 def sendgrid_noticiation():
     message = Mail(
-        from_email='aimee.mcgrenera@vumc.org',
-        to_emails='aimee.mcgrenera@vumc.org',
+        from_email='cp3016@cumc.columbia.edu',
+        to_emails='cp3016@cumc.columbia.edu',
         subject='Sending with Twilio SendGrid is Fun',
         html_content='<strong>and easy to do anywhere, even with Python</strong>')
     try:
@@ -21,11 +21,16 @@ def sendgrid_noticiation():
     except Exception as e:
         print(e.message)
 
+
 def slack_notification():
     client = slack.WebClient(os.environ["SLACK_TOKEN"])
 
     client.chat_postMessage(
-        channel="#test",
+        channel="#test-notification",
         text="Hello from your app!",
         verify=False
     )
+
+
+if __name__ == '__main__':
+    sendgrid_noticiation()
