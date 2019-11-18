@@ -797,7 +797,7 @@ def remove_expired_keys():
     # if len(expired_keys) != 0 or len(expiring_keys) != 0:
     client.chat_postMessage(
         channel="#test_channel",
-        text="Hello from your GAE!",
+        text="Hello from your GAE second time!!",
         verify=False
     )
 
