@@ -6,6 +6,15 @@ from constants import bq_utils as bq_consts
 import resources
 import sandbox
 
+# Sandbox query template
+SANDBOX_QUERY = """
+SELECT 
+    t.* 
+FROM {project}.{dataset}.{table} AS t 
+LEFT JOIN {project}.{dataset}.person AS p
+WHERE p.person_id is NULL
+"""
+
 # Select rows where the person_id is in the person table
 SELECT_EXISTING_PERSON_IDS = (
     'SELECT {fields} FROM `{project}.{dataset}.{table}` AS entry '
@@ -28,7 +37,7 @@ def get_tables_with_person_id(project_id, dataset_id):
     person_tables_df = bq.query(person_table_query)
     person_table_list = list(person_tables_df.table_name.get_values())
 
-    #remove mapping tables
+    # remove mapping tables
     for item in person_table_list:
         if item.startswith('_mapping'):
             person_table_list.remove(item)
@@ -36,35 +45,21 @@ def get_tables_with_person_id(project_id, dataset_id):
     return person_table_list
 
 
-def get_sandbox_queries(project_id, dataset_id, sandbox_query, ticket_number):
+def get_sandbox_queries(project_id, dataset_id, ticket_number):
+    # Eventually ticket_number should be passed in and stored as class property during the class instantiation
     person_tables_list = get_tables_with_person_id(project_id, dataset_id)
     queries_list = []
 
     for table in person_tables_list:
-        sandbox_queries = dict()
-        sandbox_queries[cdr_consts.QUERY] = sandbox_query.format(
-            dataset=dataset_id,
-            project=project_id,
-            table=table,
-            sandbox_dataset=sandbox.get_sandbox_dataset_id(dataset_id),
-            intermediary_table=table + '_' + ticket_number)
-        queries_list.append(sandbox_queries)
-
-    return queries_list
-
-
-def get_remove_personid_queries(project_id, dataset_id, delete_query):
-    person_tables_list = get_tables_with_person_id(project_id, dataset_id)
-    queries_list = []
-
-    for table in person_tables_list:
-        delete_queries = delete_query.format(project=project_id,
+        sandbox_query = SANDBOX_QUERY.format(project=project_id,
                                              dataset=dataset_id,
                                              table=table)
+        table_name = table + '_' + ticket_number
+        sandbox_dataset_id = sandbox.get_sandbox_dataset_id(dataset_id)
         queries_list.append({
-            clean_consts.QUERY: delete_queries,
-            clean_consts.DESTINATION_TABLE: table,
-            clean_consts.DESTINATION_DATASET: dataset_id,
+            clean_consts.QUERY: sandbox_query,
+            clean_consts.DESTINATION_TABLE: table_name,
+            clean_consts.DESTINATION_DATASET: sandbox_dataset_id,
             clean_consts.DISPOSITION: bq_consts.WRITE_TRUNCATE
         })
 
@@ -82,7 +77,7 @@ def get_queries(project=None, dataset=None):
         other tables for non-person users.
     """
     query_list = []
-    for table in common.CLINICAL_DATA_TABLES:
+    for table in get_tables_with_person_id(project, dataset):
         field_names = [
             'entry.' + field['name'] for field in resources.fields_for(table)
         ]
