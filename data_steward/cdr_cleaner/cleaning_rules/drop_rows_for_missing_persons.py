@@ -4,6 +4,7 @@ import constants.cdr_cleaner.clean_cdr as cdr_consts
 from notebooks import bq
 from constants import bq_utils as bq_consts
 import resources
+import sandbox
 
 # Select rows where the person_id is in the person table
 SELECT_EXISTING_PERSON_IDS = (
@@ -45,7 +46,7 @@ def get_sandbox_queries(project_id, dataset_id, sandbox_query, ticket_number):
             dataset=dataset_id,
             project=project_id,
             table=table,
-            sandbox_dataset=dataset_id + '_sandbox',
+            sandbox_dataset=sandbox.get_sandbox_dataset_id(dataset_id),
             intermediary_table=table + '_' + ticket_number)
         queries_list.append(sandbox_queries)
 
